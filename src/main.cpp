@@ -2,8 +2,8 @@
 /*                                                                            */
 /*    Module:       main.cpp                                                  */
 /*    Author:       raulmomox                                                 */
-/*    Created:      9/2/2026, 1:50:46 PM                                      */
-/*    Description:  Override Big Robot competition code                       */
+/*    Created:      11/11/2026, 1:54:00 PM                                    */
+/*    Description:  Override Big Robot autonomous code                        */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
 #include <cmath>
@@ -23,6 +23,7 @@ constexpr double TARGET_DEG = GEAR_RATIO * 100.0;
 
 // Controller
 controller Controller = controller(primary);
+competition Competition;
 
 // Drivetrain motors left
 motor mtr_l1 = motor(PORT10, true);
@@ -47,6 +48,17 @@ motor intake = motor(PORT8);
 motor claw_intake = motor(PORT12, true);
 motor claw_lift = motor(PORT13, true);
 
+// Drivetrain
+drivetrain chasis = drivetrain(
+    motors_l,           // motors left
+    motors_r,           // motors right
+    82.5,               // wheelTravel
+    355.0,              // trackWidth
+    310.0,              // wheelBase
+    distanceUnits::mm,  // measured in mm
+    0.6                 // gearRatio
+);
+
 void move_claw()
 {
 
@@ -66,7 +78,8 @@ void move_claw()
 
 }
 
-int clamp(int val, int min, int max)
+template<typename T>
+T clamp(T val, T min, T max)
 {
     if (val > max)
         return max;
@@ -75,73 +88,83 @@ int clamp(int val, int min, int max)
     return val;
 }
 
-int main()
-{
+void driveDistanceMm(double distanceMm) {
+    chasis.driveFor(directionType::fwd, distanceMm, distanceUnits::mm);
+}
 
+void driveDistanceCm(double distanceCm) {
+    driveDistanceMm(distanceCm * 10.0);
+}
+
+void turnByDegrees(double angleDeg) {
+    chasis.turnFor(turnType::right, angleDeg, rotationUnits::deg);
+}
+
+void autonomous() {
+    chasis.setDriveVelocity(100, velocityUnits::pct);
+    chasis.setTurnVelocity(100, velocityUnits::pct);
+
+    driveDistanceCm(30.0);
+    turnByDegrees(90.0);
+}
+
+void pre_auton() {
     arm_l.setBrake(brakeType::hold);
     arm_r.setBrake(brakeType::hold);
-
     claw_lift.setBrake(brakeType::hold);
-
     claw_lift.setPosition(0.0, rotationUnits::deg);
-
     Controller.ButtonX.pressed(move_claw);
+}
 
-    while (true)
-    {
+void usercontrol() {
+    while (true) {
+        int forwardInput = Controller.Axis3.position();
+        int turnInput = Controller.Axis1.position();
 
-        int forward = Controller.Axis3.position();
-        int turn = Controller.Axis1.position();
+        if (std::abs(forwardInput) < DEAD_ZONE)
+            forwardInput = 0;
+        if (std::abs(turnInput) < DEAD_ZONE)
+            turnInput = 0;
 
-        if (std::abs(forward) < DEAD_ZONE)
-            forward = 0;
-        if (std::abs(turn) < DEAD_ZONE)
-            turn = 0;
+        int powerLeft = clamp(forwardInput + turnInput, -MAX_DRIVE, MAX_DRIVE);
+        int powerRight = clamp(forwardInput - turnInput, -MAX_DRIVE, MAX_DRIVE);
+        motors_l.spin(directionType::fwd, powerLeft, velocityUnits::pct);
+        motors_r.spin(directionType::fwd, powerRight, velocityUnits::pct);
 
-        int power_l = clamp(forward + turn, -MAX_DRIVE, MAX_DRIVE);
-        int power_r = clamp(forward - turn, -MAX_DRIVE, MAX_DRIVE);
-
-        motors_l.spin(directionType::fwd, power_l, velocityUnits::pct);
-        motors_r.spin(directionType::fwd, power_r, velocityUnits::pct);
-
-        if (Controller.ButtonR1.pressing())
-        {
+        if (Controller.ButtonR1.pressing()) {
             arm_l.spin(directionType::fwd, -MAX_SPEED, velocityUnits::pct);
             arm_r.spin(directionType::fwd, -MAX_SPEED, velocityUnits::pct);
-        }
-
-        else if (Controller.ButtonR2.pressing())
-        {
+        } else if (Controller.ButtonR2.pressing()) {
             arm_l.spin(directionType::fwd, MAX_SPEED, velocityUnits::pct);
             arm_r.spin(directionType::fwd, MAX_SPEED, velocityUnits::pct);
-        }
-
-        else
-        {
+        } else {
             arm_l.stop();
             arm_r.stop();
         }
 
         if (Controller.ButtonA.pressing())
             intake.spin(directionType::fwd, MAX_DRIVE, velocityUnits::pct);
-
         else if (Controller.ButtonB.pressing())
             intake.spin(directionType::fwd, -MAX_DRIVE, velocityUnits::pct);
-
         else
             intake.stop();
 
         if (Controller.ButtonL1.pressing())
             claw_intake.spin(directionType::fwd, MAX_DRIVE, velocityUnits::pct);
-        
-
         else if (Controller.ButtonL2.pressing())
             claw_intake.spin(directionType::fwd, -MAX_DRIVE, velocityUnits::pct);
-        
-
         else
             claw_intake.stop();
 
         wait(30, timeUnits::msec);
     }
+}
+
+int main() {
+    Competition.autonomous(autonomous);
+    Competition.drivercontrol(usercontrol);
+    pre_auton();
+
+    while (true)
+        wait(100, timeUnits::msec);
 }
