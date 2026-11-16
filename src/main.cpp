@@ -21,6 +21,10 @@ constexpr int MAX_SPEED = 60;
 constexpr double GEAR_RATIO = 60.0 / 12.0;
 constexpr double TARGET_DEG = GEAR_RATIO * 100.0;
 
+// State variables for Callbacks
+constexpr double CLAW_DOWN_TOLERANCE = TARGET_DEG * 0.1;
+bool intake_mode = false; 
+
 // Controller
 controller Controller = controller(primary);
 
@@ -47,23 +51,30 @@ motor intake = motor(PORT8);
 motor claw_intake = motor(PORT12, true);
 motor claw_lift = motor(PORT13, true);
 
-void move_claw()
-{
+bool claw_is_down() {
+    return claw_lift.position(rotationUnits::deg) <= CLAW_DOWN_TOLERANCE;
+}
 
-    static bool claw_lifted = false;
-
-    double target_deg = claw_lifted ? 0.0 : TARGET_DEG;
-
-    claw_lift.spinToPosition(
-        target_deg,
+void claw_to(double target_deg) {
+    claw_lift.spinToPosition(target_deg,
         rotationUnits::deg,
         MAX_DRIVE,
         velocityUnits::pct,
-        false
+        false // 'false' para que no bloquee el hilo y el robot pueda moverse mientras se eleva
     );
+}
 
-    claw_lifted = !claw_lifted;
+// Callback ButtonX: raise/lower claw
+void move_claw() {
+    claw_to(claw_is_down() ? TARGET_DEG : 0.0);
+}
 
+// Callback ButtonY: toggle automatic intake mode
+void toggle_intake() {
+    intake_mode = !intake_mode;
+    if (intake_mode && !claw_is_down()) {
+        claw_to(0.0);
+    }
 }
 
 int clamp(int val, int min, int max)
@@ -86,10 +97,10 @@ int main()
     claw_lift.setPosition(0.0, rotationUnits::deg);
 
     Controller.ButtonX.pressed(move_claw);
+    Controller.ButtonY.pressed(toggle_intake);
 
-    while (true)
-    {
-
+    while (true) {
+        
         int forward = Controller.Axis3.position();
         int turn = Controller.Axis1.position();
 
